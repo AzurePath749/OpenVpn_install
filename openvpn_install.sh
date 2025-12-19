@@ -5,7 +5,7 @@
 # Features: Auto-Install, Kernel Optimization, UDP Tuning
 # Author:  Assistant & AzurePath749
 # Filename: openvpn_install.sh
-# Version: 2.4 (Fix Apt Error & Repo Patch)
+# Version: 2.5 (Enable Interactive Mode)
 # ==================================================
 
 # --- 颜色配置 ---
@@ -190,7 +190,7 @@ upgrade_openvpn() {
     log_success "升级与优化流程结束。"
 }
 
-# 6. 安装流程
+# 6. 安装流程 (恢复交互)
 install_process() {
     clean_environment # 先清理环境
     prepare_installer
@@ -200,7 +200,7 @@ install_process() {
         log_warn "检测到 OpenVPN 已安装！"
         read -p "是否覆盖重装? [y/N]: " REINSTALL
         if [[ "$REINSTALL" =~ ^[yY]$ ]]; then
-             export AUTO_INSTALL=y
+             # 移除了 AUTO_INSTALL=y，恢复交互
              ./openvpn-install.sh install
         else
              log_info "已取消安装"
@@ -209,7 +209,7 @@ install_process() {
     fi
 
     # 开始安装
-    export AUTO_INSTALL=y
+    # 移除了 AUTO_INSTALL=y，恢复交互
     ./openvpn-install.sh install
     
     # 安装后立即探测环境并优化
@@ -235,7 +235,7 @@ main_menu() {
     detect_env # 初始化环境检测
     
     echo -e "################################################"
-    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.4)          #"
+    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.5)          #"
     echo -e "#   已集成：内核优化 + BBR + Buffer Tuning     #"
     echo -e "################################################"
     
