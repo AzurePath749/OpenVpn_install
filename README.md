@@ -19,7 +19,7 @@
 
 请直接复制以下命令到终端运行：
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/install_ovpn.sh)
+bash <(curl -sL https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn_install.sh)
 ```
 
 (如果无法连接 GitHub，请尝试使用 wget -qO- ... 替代)
