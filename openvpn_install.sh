@@ -5,7 +5,7 @@
 # Features: Auto-Install, Kernel Optimization, UDP Tuning
 # Author:  Assistant & AzurePath749
 # Filename: openvpn_install.sh
-# Version: 2.2 (Auto-Detect Paths & Robustness)
+# Version: 2.3 (Fix Installer Invocation)
 # ==================================================
 
 # --- 颜色配置 ---
@@ -180,7 +180,8 @@ install_process() {
         read -p "是否覆盖重装? [y/N]: " REINSTALL
         if [[ "$REINSTALL" =~ ^[yY]$ ]]; then
              export AUTO_INSTALL=y
-             ./openvpn-install.sh
+             # 修复：增加 install 参数
+             ./openvpn-install.sh install
         else
              log_info "已取消安装"
              return
@@ -189,7 +190,8 @@ install_process() {
 
     # 开始安装
     export AUTO_INSTALL=y
-    ./openvpn-install.sh
+    # 修复：增加 install 参数以适配新版脚本
+    ./openvpn-install.sh install
     
     # 安装后立即探测环境并优化
     detect_env
@@ -204,7 +206,8 @@ manage_users() {
         log_error "未检测到 OpenVPN 服务配置，请先执行 [1] 安装"
         return
     fi
-    ./openvpn-install.sh
+    # 修复：增加 interactive 参数以唤起菜单
+    ./openvpn-install.sh interactive
 }
 
 # 7. 主菜单
@@ -214,7 +217,7 @@ main_menu() {
     detect_env # 初始化环境检测
     
     echo -e "################################################"
-    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.2)          #"
+    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.3)          #"
     echo -e "#   已集成：内核优化 + BBR + Buffer Tuning     #"
     echo -e "################################################"
     
@@ -238,7 +241,7 @@ main_menu() {
         1) install_process ;;
         2) manage_users ;;
         3) optimize_system; enhance_config ;;
-        4) manage_users ;;
+        4) manage_users ;; # 卸载通常也在交互菜单中
         5) upgrade_openvpn ;;
         *) exit 0 ;;
     esac
