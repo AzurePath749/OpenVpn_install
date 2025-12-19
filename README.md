@@ -18,9 +18,9 @@
 📦 快速安装 (Quick Start)
 
 请直接复制以下命令到终端运行：
-
+```bash
 bash <(curl -sL https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/install_ovpn.sh)
-
+```
 
 (如果无法连接 GitHub，请尝试使用 wget -qO- ... 替代)
 
