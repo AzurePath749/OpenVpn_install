@@ -5,7 +5,7 @@
 # Features: Auto-Install, Kernel Optimization, UDP Tuning
 # Author:  Assistant & AzurePath749
 # Filename: openvpn_install.sh
-# Version: 2.3 (Fix Installer Invocation)
+# Version: 2.4 (Fix Apt Error & Repo Patch)
 # ==================================================
 
 # --- 颜色配置 ---
@@ -34,7 +34,19 @@ check_root() {
     [[ $EUID -ne 0 ]] && { log_error "请使用 root 权限运行"; exit 1; }
 }
 
-# 0. 环境智能探测 (关键修复)
+# 0. 环境清理与修复 (关键修复：删除导致报错的坏源)
+clean_environment() {
+    # 如果之前的安装失败导致 apt 损坏，这里先尝试修复
+    if [ -f "/etc/apt/sources.list.d/openvpn.list" ]; then
+        log_warn "检测到可能损坏的 OpenVPN 源文件，正在清理..."
+        rm -f "/etc/apt/sources.list.d/openvpn.list"
+        if [ -f /etc/debian_version ]; then
+            apt-get update -y >/dev/null 2>&1
+        fi
+    fi
+}
+
+# 1. 环境智能探测
 detect_env() {
     # 探测配置文件路径
     if [ -f "/etc/openvpn/server/server.conf" ]; then
@@ -53,7 +65,7 @@ detect_env() {
     fi
 }
 
-# 1. 核心优化：系统内核与网络参数
+# 2. 核心优化：系统内核与网络参数
 optimize_system() {
     log_info "正在应用内核级网络优化 (覆盖模式)..."
 
@@ -79,7 +91,7 @@ EOF
     log_success "内核参数已加载至: $SYSCTL_CONF"
 }
 
-# 2. 配置文件增强 (Turbo Mode)
+# 3. 配置文件增强 (Turbo Mode)
 enhance_config() {
     detect_env # 重新探测路径
     
@@ -127,7 +139,7 @@ EOF
     fi
 }
 
-# 3. 下载/更新核心安装脚本
+# 4. 下载/更新核心安装脚本 (含补丁修复)
 prepare_installer() {
     if [ ! -f "$INSTALLER_PATH" ]; then
         log_info "正在下载核心安装组件..."
@@ -144,9 +156,17 @@ prepare_installer() {
         rm -f $INSTALLER_PATH
         exit 1
     fi
+
+    # === PATCH: 强制禁用官方源 ===
+    # 针对 Debian/Ubuntu 系统，防止因官方源不支持当前版本而导致的 apt 报错
+    # 强制将 support_official_repo=1 改为 0
+    if grep -q "support_official_repo=1" $INSTALLER_PATH; then
+        log_info "检测到官方源逻辑，正在打补丁以兼容当前系统..."
+        sed -i 's/support_official_repo=1/support_official_repo=0/g' $INSTALLER_PATH
+    fi
 }
 
-# 4. 升级 OpenVPN
+# 5. 升级 OpenVPN
 upgrade_openvpn() {
     log_info "正在检查 OpenVPN 版本更新..."
     
@@ -170,8 +190,9 @@ upgrade_openvpn() {
     log_success "升级与优化流程结束。"
 }
 
-# 5. 安装流程
+# 6. 安装流程
 install_process() {
+    clean_environment # 先清理环境
     prepare_installer
     
     # 检测是否已安装
@@ -180,7 +201,6 @@ install_process() {
         read -p "是否覆盖重装? [y/N]: " REINSTALL
         if [[ "$REINSTALL" =~ ^[yY]$ ]]; then
              export AUTO_INSTALL=y
-             # 修复：增加 install 参数
              ./openvpn-install.sh install
         else
              log_info "已取消安装"
@@ -190,7 +210,6 @@ install_process() {
 
     # 开始安装
     export AUTO_INSTALL=y
-    # 修复：增加 install 参数以适配新版脚本
     ./openvpn-install.sh install
     
     # 安装后立即探测环境并优化
@@ -199,25 +218,24 @@ install_process() {
     enhance_config
 }
 
-# 6. 用户管理流程
+# 7. 用户管理流程
 manage_users() {
     prepare_installer
     if [ ! -f "$OVPN_CONF" ]; then
         log_error "未检测到 OpenVPN 服务配置，请先执行 [1] 安装"
         return
     fi
-    # 修复：增加 interactive 参数以唤起菜单
     ./openvpn-install.sh interactive
 }
 
-# 7. 主菜单
+# 8. 主菜单
 main_menu() {
     clear
     check_root
     detect_env # 初始化环境检测
     
     echo -e "################################################"
-    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.3)          #"
+    echo -e "#   OpenVPN 增强版一键安装脚本 (v2.4)          #"
     echo -e "#   已集成：内核优化 + BBR + Buffer Tuning     #"
     echo -e "################################################"
     
@@ -241,7 +259,7 @@ main_menu() {
         1) install_process ;;
         2) manage_users ;;
         3) optimize_system; enhance_config ;;
-        4) manage_users ;; # 卸载通常也在交互菜单中
+        4) manage_users ;; 
         5) upgrade_openvpn ;;
         *) exit 0 ;;
     esac
