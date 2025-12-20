@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# OpenVPN 一键安装脚本 - 高可用重试版
+# OpenVPN 一键安装脚本 - 循环测试增强版
 # 支持: Debian, Ubuntu, CentOS, AlmaLinux, Rocky Linux
-# 特性: LXC支持, 自动BBR优化, SHA256校验, 10次故障重试机制
+# 特性: 循环菜单, LXC支持, 自动BBR优化, SHA256校验, 10次故障重试
 # GitHub: https://github.com/AzurePath749/OpenVpn_install
 #
 
@@ -31,6 +31,12 @@ log_info() { echo -e "${GREEN}[INFO] $1${PLAIN}"; }
 log_warn() { echo -e "${YELLOW}[WARN] $1${PLAIN}"; }
 log_err()  { echo -e "${RED}[ERROR] $1${PLAIN}"; }
 
+# 暂停并按回车继续
+pause() {
+    echo ""
+    read -p "按回车键返回主菜单..."
+}
+
 # 核心重试函数：重复运行 10 次排错
 run_with_retry() {
     local max_retries=10
@@ -38,7 +44,6 @@ run_with_retry() {
     local attempt=1
     
     while [ $attempt -le $max_retries ]; do
-        # 执行命令，如果有参数则直接传递
         "$@"
         local status=$?
         
@@ -88,7 +93,6 @@ check_os() {
 get_public_ip() {
     local ip=""
     for api in "${IP_APIS[@]}"; do
-        # 增加 --retry 和 --connect-timeout 参数
         ip=$(curl -s --max-time 5 --retry 3 "$api")
         if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "$ip"
@@ -105,15 +109,11 @@ install_dependencies() {
     log_info "正在更新系统并安装依赖 (启用自动重试模式)..."
     
     if [[ "$OS" == "debian" ]]; then
-        # 使用重试包装器运行更新和安装
         run_with_retry apt-get update
         run_with_retry apt-get install -y openvpn iptables openssl ca-certificates curl tar
-        
         if [[ ! -d /usr/share/easy-rsa ]]; then 
-            # 尝试通过 apt 安装 easy-rsa，允许失败以便后续手动下载
             apt-get install -y easy-rsa || log_warn "apt 安装 easy-rsa 失败，将尝试手动下载。"
         fi
-        
     elif [[ "$OS" == "centos" ]]; then
         run_with_retry yum install -y epel-release
         run_with_retry yum update -y
@@ -121,13 +121,11 @@ install_dependencies() {
         run_with_retry yum install -y easy-rsa
     fi
 
-    # 检查 Easy-RSA 是否存在，不存在则下载
     if [[ ! -d /usr/share/easy-rsa ]]; then
         log_warn "系统源未找到 Easy-RSA，从 GitHub 下载..."
         mkdir -p /usr/share/easy-rsa
         local tarball="EasyRSA-3.1.2.tgz"
         
-        # 使用重试包装器下载
         run_with_retry curl -L -o "$tarball" "$EASYRSA_URL"
         
         local file_hash=$(sha256sum "$tarball" | awk '{print $1}')
@@ -147,7 +145,6 @@ configure_openvpn() {
     cp -r /usr/share/easy-rsa "$OVPN_DATA"
     cd "$OVPN_DATA"
     
-    # 这里的命令通常是本地生成，极少失败，但也加上基础错误检查
     ./easyrsa init-pki
     ./easyrsa --batch build-ca nopass
     ./easyrsa --batch build-server-full "server" nopass
@@ -297,7 +294,6 @@ uninstall_openvpn() {
     systemctl stop openvpn-server@server
     systemctl disable openvpn-server@server
     
-    # 卸载也加入重试，防止锁占用导致卸载不干净
     if [[ "$OS" == "debian" ]]; then 
         run_with_retry apt-get remove --purge -y openvpn easy-rsa
     elif [[ "$OS" == "centos" ]]; then 
@@ -307,61 +303,149 @@ uninstall_openvpn() {
     log_info "卸载完成。"
 }
 
-install_menu() {
-    clear
-    echo -e "${BLUE}================================================${PLAIN}"
-    echo -e "${BLUE}    OpenVPN 一键安装与管理脚本 (稳定重试版)     ${PLAIN}"
-    echo -e "${BLUE}    GitHub: github.com/AzurePath749/OpenVpn_install ${PLAIN}"
-    echo -e "${BLUE}================================================${PLAIN}"
-    
-    PUBLIC_IP=$(get_public_ip)
-    
-    echo "1. 安装 OpenVPN (含 BBR 优化检测)"
-    echo "2. 添加客户端用户"
-    echo "3. 吊销/删除用户"
-    echo "4. 手动开启 BBR"
-    echo "5. 卸载 OpenVPN"
-    echo "0. 退出"
-    echo ""
-    read -p "请输入选项 [0-5]: " option
-    
-    case $option in
-        1)
-            if [[ -e $SERVER_CONF ]]; then log_warn "已安装，请先卸载。"; exit 0; fi
-            read -p "IP 地址 [默认: $PUBLIC_IP]: " input_ip
-            PUBLIC_IP=${input_ip:-$PUBLIC_IP}
-            echo "选择协议: 1) UDP (推荐) 2) TCP"; read -p "选择 [默认 1]: " p; if [[ "$p" == "2" ]]; then PROTOCOL="tcp"; else PROTOCOL="udp"; fi
-            read -p "端口 [默认 1194]: " port; PORT=${port:-1194}
-            echo "选择 DNS: 1) Google 2) Cloudflare"; read -p "选择 [默认 1]: " d; if [[ "$d" == "2" ]]; then DNS1="1.1.1.1"; DNS2="1.0.0.1"; else DNS1="8.8.8.8"; DNS2="8.8.4.4"; fi
-            if [[ "$OS" == "debian" ]]; then GROUP_NAME="nogroup"; else GROUP_NAME="nobody"; fi
-            
-            install_dependencies
-            configure_openvpn
-            generate_server_conf
-            setup_firewall
-            start_service
-            new_client "client_default"
-            
-            echo ""
-            enable_bbr
+# --- 循环菜单 ---
 
-            echo ""
-            log_info "安装全部完成！"
-            log_info "默认配置文件已生成: /root/client_default.ovpn"
-            ;;
-        2)
-            if [[ ! -e $SERVER_CONF ]]; then log_err "未安装！"; exit 1; fi
-            read -p "新用户名: " n; if [[ -z "$n" ]]; then exit 1; fi
-            new_client "$n"
-            ;;
-        3)
-            read -p "删除用户名: " n; cd "$OVPN_DATA"; ./easyrsa --batch revoke "$n"; ./easyrsa gen-crl; cp pki/crl.pem "$CONF_PATH"; rm -f "$CLIENT_DIR/$n.ovpn"; systemctl restart openvpn-server@server
-            ;;
-        4) enable_bbr ;;
-        5) uninstall_openvpn ;;
-        0) exit 0 ;;
-        *) log_err "无效选项" ;;
-    esac
+install_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}    OpenVPN 一键安装与管理脚本 (循环测试版)     ${PLAIN}"
+        echo -e "${BLUE}    GitHub: github.com/AzurePath749/OpenVpn_install ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        
+        # 动态检测安装状态
+        if [[ -e $SERVER_CONF ]]; then
+            echo -e "状态: ${GREEN}已安装${PLAIN}"
+        else
+            echo -e "状态: ${RED}未安装${PLAIN}"
+        fi
+        echo ""
+        
+        echo "1. 安装 OpenVPN (含 BBR 优化检测)"
+        echo "2. 添加客户端用户"
+        echo "3. 吊销/删除用户"
+        echo "4. 手动开启 BBR"
+        echo "5. 卸载 OpenVPN"
+        echo "0. 退出脚本"
+        echo ""
+        read -p "请输入选项 [0-5]: " option
+        
+        case $option in
+            1)
+                if [[ -e $SERVER_CONF ]]; then 
+                    log_warn "OpenVPN 已安装。如需重装，请先选择选项 5 卸载。"
+                    pause
+                    continue
+                fi
+                
+                PUBLIC_IP=$(get_public_ip)
+                echo ""
+                read -p "IP 地址 [默认: $PUBLIC_IP]: " input_ip
+                PUBLIC_IP=${input_ip:-$PUBLIC_IP}
+                echo "选择协议: 1) UDP (推荐) 2) TCP"; read -p "选择 [默认 1]: " p; if [[ "$p" == "2" ]]; then PROTOCOL="tcp"; else PROTOCOL="udp"; fi
+                read -p "端口 [默认 1194]: " port; PORT=${port:-1194}
+                echo "选择 DNS: 1) Google 2) Cloudflare"; read -p "选择 [默认 1]: " d; if [[ "$d" == "2" ]]; then DNS1="1.1.1.1"; DNS2="1.0.0.1"; else DNS1="8.8.8.8"; DNS2="8.8.4.4"; fi
+                if [[ "$OS" == "debian" ]]; then GROUP_NAME="nogroup"; else GROUP_NAME="nobody"; fi
+                
+                install_dependencies
+                configure_openvpn
+                generate_server_conf
+                setup_firewall
+                start_service
+                new_client "client_default"
+                
+                echo ""
+                enable_bbr
+
+                echo ""
+                log_info "安装全部完成！"
+                log_info "默认配置文件已生成: /root/client_default.ovpn"
+                pause
+                ;;
+            2)
+                if [[ ! -e $SERVER_CONF ]]; then 
+                    log_err "OpenVPN 未安装，请先安装！"
+                    pause
+                    continue
+                fi
+                
+                while true; do
+                    echo ""
+                    read -p "请输入新用户名 (仅字母数字下划线，留空退出): " new_name
+                    if [[ -z "$new_name" ]]; then break; fi # 允许留空退出添加
+                    
+                    if [[ ! "$new_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                        log_warn "用户名包含非法字符！请仅使用字母、数字、下划线(_)或减号(-)。"
+                        continue
+                    fi
+                    if [[ -f "$OVPN_DATA/pki/issued/$new_name.crt" ]]; then
+                        log_warn "用户 $new_name 已存在，请使用其他名称。"
+                        continue
+                    fi
+                    new_client "$new_name"
+                    break
+                done
+                pause
+                ;;
+            3)
+                if [[ ! -e $SERVER_CONF ]]; then 
+                    log_err "OpenVPN 未安装，请先安装！"
+                    pause
+                    continue
+                fi
+                
+                echo -e "\n${YELLOW}=== 当前已存在的用户列表 ===${PLAIN}"
+                if [[ -d "$OVPN_DATA/pki/issued" ]]; then
+                    # 计数器
+                    count=0
+                    ls "$OVPN_DATA/pki/issued" | grep ".crt" | grep -v "server.crt" | grep -v "ca.crt" | sed 's/.crt//g' | while read line; do
+                        echo " -> $line"
+                        ((count++))
+                    done
+                else
+                    log_warn "未找到任何用户证书。"
+                fi
+                echo ""
+                
+                while true; do
+                    read -p "请输入要删除的用户名 (留空取消): " del_name
+                    if [[ -z "$del_name" ]]; then break; fi
+                    
+                    if [[ ! -f "$OVPN_DATA/pki/issued/$del_name.crt" ]]; then
+                        log_warn "用户 $del_name 不存在，请检查列表拼写。"
+                        continue
+                    fi
+                    
+                    # 执行删除
+                    cd "$OVPN_DATA"
+                    ./easyrsa --batch revoke "$del_name"
+                    ./easyrsa gen-crl
+                    cp pki/crl.pem "$CONF_PATH"
+                    rm -f "$CLIENT_DIR/$del_name.ovpn"
+                    systemctl restart openvpn-server@server
+                    log_info "用户 $del_name 已成功删除并吊销证书。"
+                    break
+                done
+                pause
+                ;;
+            4) 
+                enable_bbr
+                pause
+                ;;
+            5) 
+                uninstall_openvpn
+                # 卸载后通常不需要暂停，直接回菜单显示“未安装”状态更直观，但为了确认卸载信息，暂停一下也可以
+                pause 
+                ;;
+            0) 
+                exit 0 
+                ;;
+            *) 
+                log_err "无效选项"
+                pause
+                ;;
+        esac
+    done
 }
 
 check_root
