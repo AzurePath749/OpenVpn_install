@@ -30,7 +30,9 @@ chmod +x openvpn.sh
 方式二：Wget 安装（推荐 Debian/Ubuntu）
 ```bash
 wget -O openvpn.sh https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh
+
 chmod +x openvpn.sh
+
 ./openvpn.sh
 ```
 
