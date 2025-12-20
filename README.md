@@ -19,18 +19,20 @@ OpenVPN 智能一键安装脚本
 请使用 root 用户登录 SSH。
 
 方式一：Curl 安装（推荐 CentOS/Rocky）
+```bash
+curl -O https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh
 
-curl -O [https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh](https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh)
 chmod +x openvpn.sh
-./openvpn.sh
 
+./openvpn.sh
+```
 
 方式二：Wget 安装（推荐 Debian/Ubuntu）
-
-wget -O openvpn.sh [https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh](https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh)
+```bash
+wget -O openvpn.sh https://raw.githubusercontent.com/AzurePath749/OpenVpn_install/main/openvpn.sh
 chmod +x openvpn.sh
 ./openvpn.sh
-
+```
 
 🛡️ 安全性与隐私说明
 
