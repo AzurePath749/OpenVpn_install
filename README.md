@@ -59,3 +59,4 @@ LXC 容器共享宿主机内核，脚本会检测到 LXC 环境并跳过 BBR 内
 欢迎提交 Issue 或 Pull Request 来改进此脚本。
 
 项目地址: https://github.com/AzurePath749/OpenVpn_install
+<img width="699" height="452" alt="image" src="https://github.com/user-attachments/assets/9cd94ba6-3a5a-4aa6-932e-a6134f1f5aa2" />
