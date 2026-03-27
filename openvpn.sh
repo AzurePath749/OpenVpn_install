@@ -14,6 +14,7 @@ CONF_PATH="/etc/openvpn/server"
 OVPN_DATA="/etc/openvpn/easy-rsa"
 SERVER_CONF="${CONF_PATH}/server.conf"
 CLIENT_DIR="/root"
+OPT_CONF="${CONF_PATH}/opt.conf"
 
 # --- 外部资源定义 ---
 EASYRSA_VER="3.1.2"
@@ -199,6 +200,14 @@ crl-verify crl.pem
 explicit-exit-notify 1
 EOF
     if [[ "$PROTOCOL" == "tcp" ]]; then sed -i '/explicit-exit-notify/d' "$SERVER_CONF"; fi
+    
+    if [[ "$OPT_MTU" == "y" ]]; then
+        sed -i '/^dev tun/a tun-mtu 1400\nmssfix 1360' "$SERVER_CONF"
+    fi
+    
+    if [[ "$OPT_COMPRESS" == "y" ]]; then
+        sed -i '/^verb 3/i compress lz4-v2\npush "compress lz4-v2"' "$SERVER_CONF"
+    fi
 }
 
 setup_firewall() {
@@ -250,8 +259,23 @@ new_client() {
         log_err "用户名格式无效，仅允许字母、数字、下划线(_)和减号(-)"
         return 1
     fi
+    
+    if [[ -f "$OPT_CONF" ]]; then
+        source "$OPT_CONF"
+    fi
+    
     cd "$OVPN_DATA" || { log_err "无法进入目录 $OVPN_DATA"; return 1; }
     ./easyrsa --batch build-client-full "$CLIENT_NAME" nopass || { log_err "创建客户端 $CLIENT_NAME 失败"; return 1; }
+    
+    local mtu_config=""
+    local compress_config=""
+    if [[ "$OPT_MTU" == "y" ]]; then
+        mtu_config="tun-mtu 1400
+mssfix 1360"
+    fi
+    if [[ "$OPT_COMPRESS" == "y" ]]; then
+        compress_config="compress lz4-v2"
+    fi
     
     cat > "$CLIENT_DIR/$CLIENT_NAME.ovpn" <<EOF
 client
@@ -268,6 +292,8 @@ cipher AES-256-GCM
 ignore-unknown-option block-outside-dns
 block-outside-dns
 verb 3
+$mtu_config
+$compress_config
 <ca>
 $(cat "$CONF_PATH/ca.crt")
 </ca>
@@ -314,10 +340,15 @@ uninstall_openvpn() {
     log_warn "确定要卸载 OpenVPN 吗？(y/n)"
     read -r confirm
     if [[ "$confirm" != "y" ]]; then return; fi
-    systemctl stop openvpn-server@server
-    systemctl disable openvpn-server@server
+    systemctl stop openvpn-server@server 2>/dev/null || true
+    systemctl disable openvpn-server@server 2>/dev/null || true
     
     if [[ "$OS" == "debian" ]]; then 
+        if [[ -f /var/lib/dpkg/lock ]] || [[ -f /var/lib/dpkg/lock-frontend ]]; then
+            log_info "检测到 dpkg 锁，尝试修复..."
+            rm -f /var/lib/dpkg/lock* /var/cache/apt/archives/lock
+            dpkg --configure -a 2>/dev/null || true
+        fi
         run_with_retry apt-get remove --purge -y openvpn easy-rsa
     elif [[ "$OS" == "centos" ]]; then 
         if command -v dnf &>/dev/null; then
@@ -393,6 +424,25 @@ install_menu() {
                 read -p "选择 [默认 1]: " d
                 if [[ "$d" == "2" ]]; then DNS1="1.1.1.1"; DNS2="1.0.0.1"; else DNS1="8.8.8.8"; DNS2="8.8.4.4"; fi
                 if [[ "$OS" == "debian" ]]; then GROUP_NAME="nogroup"; else GROUP_NAME="nobody"; fi
+                
+                echo ""
+                echo -e "${YELLOW}=== 国内网络优化选项 ===${PLAIN}"
+                read -p "启用 MTU 优化 (减少分片丢包)? [Y/n]: " opt_mtu
+                OPT_MTU="${opt_mtu:-y}"
+                [[ "$OPT_MTU" != "n" ]] && OPT_MTU="y" || OPT_MTU="n"
+                
+                read -p "启用 LZ4 压缩 (提升传输效率)? [Y/n]: " opt_comp
+                OPT_COMPRESS="${opt_comp:-y}"
+                [[ "$OPT_COMPRESS" != "n" ]] && OPT_COMPRESS="y" || OPT_COMPRESS="n"
+                
+                echo ""
+                log_info "已选优化: MTU=$OPT_MTU, 压缩=$OPT_COMPRESS"
+                
+                echo "OPT_MTU=$OPT_MTU" > "$OPT_CONF"
+                echo "OPT_COMPRESS=$OPT_COMPRESS" >> "$OPT_CONF"
+                echo "PROTOCOL=$PROTOCOL" >> "$OPT_CONF"
+                echo "PORT=$PORT" >> "$OPT_CONF"
+                echo "PUBLIC_IP=$PUBLIC_IP" >> "$OPT_CONF"
                 
                 install_dependencies
                 configure_openvpn
