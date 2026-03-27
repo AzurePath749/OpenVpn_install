@@ -349,12 +349,12 @@ uninstall_openvpn() {
             rm -f /var/lib/dpkg/lock* /var/cache/apt/archives/lock
             dpkg --configure -a 2>/dev/null || true
         fi
-        run_with_retry apt-get remove --purge -y openvpn easy-rsa
+        apt-get remove --purge -y openvpn easy-rsa 2>/dev/null || true
     elif [[ "$OS" == "centos" ]]; then 
         if command -v dnf &>/dev/null; then
-            run_with_retry dnf remove -y openvpn easy-rsa
+            dnf remove -y openvpn easy-rsa 2>/dev/null || true
         else
-            run_with_retry yum remove -y openvpn easy-rsa
+            yum remove -y openvpn easy-rsa 2>/dev/null || true
         fi
     fi
     rm -rf /etc/openvpn /usr/share/easy-rsa
