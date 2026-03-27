@@ -438,14 +438,15 @@ install_menu() {
                 echo ""
                 log_info "已选优化: MTU=$OPT_MTU, 压缩=$OPT_COMPRESS"
                 
+                install_dependencies
+                configure_openvpn
+                
                 echo "OPT_MTU=$OPT_MTU" > "$OPT_CONF"
                 echo "OPT_COMPRESS=$OPT_COMPRESS" >> "$OPT_CONF"
                 echo "PROTOCOL=$PROTOCOL" >> "$OPT_CONF"
                 echo "PORT=$PORT" >> "$OPT_CONF"
                 echo "PUBLIC_IP=$PUBLIC_IP" >> "$OPT_CONF"
                 
-                install_dependencies
-                configure_openvpn
                 generate_server_conf
                 setup_firewall
                 start_service
