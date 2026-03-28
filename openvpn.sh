@@ -48,8 +48,10 @@ run_with_retry() {
     local attempt=1
     
     while [ "$attempt" -le "$max_retries" ]; do
+        set +e
         "$@"
         local status=$?
+        set -euo pipefail
         
         if [ "$status" -eq 0 ]; then
             return 0
@@ -167,6 +169,7 @@ configure_openvpn() {
     ./easyrsa --batch build-client-full "client" nopass || { log_err "创建客户端证书失败"; exit 1; }
     
     cp pki/ca.crt pki/private/server.key pki/issued/server.crt pki/ta.key pki/crl.pem "$CONF_PATH"
+    chmod 600 "$CONF_PATH/server.key" "$CONF_PATH/ta.key"
     openssl dhparam -out "$CONF_PATH/dh.pem" 3072 || { log_err "生成 DH 参数失败"; exit 1; }
 }
 
@@ -220,6 +223,10 @@ setup_firewall() {
     sysctl -p "$SYSCTL_CONF"
     
     NIC=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
+    if [[ -z "$NIC" ]]; then
+        log_err "无法检测出口网卡"
+        return 1
+    fi
     
     if [[ "$OS" == "debian" ]]; then
         run_with_retry iptables -I INPUT -p "$PROTOCOL" --dport "$PORT" -j ACCEPT
@@ -250,6 +257,7 @@ start_service() {
         log_info "OpenVPN 服务启动成功！"
     else
         log_err "OpenVPN 启动失败，请检查 systemctl status openvpn-server@server"
+        return 1
     fi
 }
 
@@ -308,6 +316,7 @@ $(cat "$CONF_PATH/ta.key")
 </tls-crypt>
 EOF
     log_info "客户端配置已生成: $CLIENT_DIR/$CLIENT_NAME.ovpn"
+    chmod 600 "$CLIENT_DIR/$CLIENT_NAME.ovpn"
 }
 
 enable_bbr() {
@@ -397,6 +406,11 @@ install_menu() {
                 fi
                 
                 PUBLIC_IP=$(get_public_ip)
+                if [[ -z "$PUBLIC_IP" ]]; then
+                    log_err "无法获取公网 IP 地址，请手动输入"
+                    pause
+                    continue
+                fi
                 echo ""
                 read -p "IP 地址 [默认: $PUBLIC_IP]: " input_ip
                 if [[ -n "$input_ip" ]]; then
@@ -446,6 +460,7 @@ install_menu() {
                 echo "PROTOCOL=$PROTOCOL" >> "$OPT_CONF"
                 echo "PORT=$PORT" >> "$OPT_CONF"
                 echo "PUBLIC_IP=$PUBLIC_IP" >> "$OPT_CONF"
+                chmod 600 "$OPT_CONF"
                 
                 generate_server_conf
                 setup_firewall
